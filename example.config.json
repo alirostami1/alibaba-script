@@ -1,0 +1,22 @@
+{
+    "telegramApiKey": "",
+    "telegramChatId": -40675510,
+    "socksUrl": "127.0.0.1:1080",
+    "checkIntervalSeconds": 30,
+    "trainServices": [
+        {
+            "description": "ghatar barghasht mashhad",
+            "url": "https://ws.alibaba.ir/api/v2/train/available/eyJGcm9tIjoxLCJUbyI6MTkxLCJEZXBhcnR1cmVEYXRlIjoiMjAyMy0xMS0yN1QwMDowMDowMCIsIlRpY2tldFR5cGUiOjEsIklzRXhjbHVzaXZlQ29tcGFydG1lbnQiOmZhbHNlLCJQYXNzZW5nZXJDb3VudCI6MSwiUmV0dXJuRGF0ZSI6bnVsbCwiU2VydmljZVR5cGUiOm51bGwsIkNoYW5uZWwiOjEsIkF2YWlsYWJsZVRhcmdldFR5cGUiOm51bGwsIlJlcXVlc3RlciI6bnVsbCwiVXNlcklkIjo1MDY1NDk5NzgsIk9ubHlXaXRoSG90ZWwiOmZhbHNlLCJGb3JjZVVwZGF0ZSI6bnVsbH0=",
+            "seats": 1,
+            "shouldBeCompartment": true,
+            "compartmentCapacity": 4
+        }
+    ],
+    "flightServices": [
+        {
+            "description": "parvaz bargasht mashhad",
+            "url": "https://ws.alibaba.ir/api/v1/flights/domestic/available/HA2DKOBVGQ3C2MBNGYZTQMZWGM2DOMBZGE4TQMBUGEZDKLJZGQWVISCSFVGUQRBNGIYDEMZRGEZDOLJNFU",
+            "seats": 1
+        }
+    ]
+}

@@ -1,0 +1,7 @@
+services:
+  alibaba:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/etc/alibaba/config.json
