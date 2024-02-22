@@ -91,7 +91,7 @@ type TrainAPIResponse struct {
 }
 
 type Iteration[T comparable] struct {
-	mu         sync.Mutex
+	mu         *sync.Mutex
 	Counter    uint64
 	Collection []T
 }
@@ -108,7 +108,7 @@ func (i *Iteration[T]) Get() []T {
 	return i.Collection
 }
 
-func (i *Iteration[T]) Difference(collection []T) []T {
+func (i *Iteration[T]) Diff(collection []T) []T {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	_, diff := lo.Difference(i.Collection, collection)
@@ -127,11 +127,19 @@ func main() {
 		log.Fatalf("unmarshaling config file: %+v", err)
 	}
 
-	for _, service := range config.TrainServices {
-		service.LastIteration = &Iteration[TrainInfo]{}
+	for i := range config.TrainServices {
+		config.TrainServices[i].LastIteration = &Iteration[TrainInfo]{
+			mu:         &sync.Mutex{},
+			Counter:    0,
+			Collection: make([]TrainInfo, 0),
+		}
 	}
-	for _, service := range config.FlightServices {
-		service.LastIteration = &Iteration[FlightInfo]{}
+	for i := range config.FlightServices {
+		config.FlightServices[i].LastIteration = &Iteration[FlightInfo]{
+			mu:         &sync.Mutex{},
+			Counter:    0,
+			Collection: make([]FlightInfo, 0),
+		}
 	}
 
 	telegramService, err := telegram.New(config.TelegramAPIKey)
@@ -175,7 +183,13 @@ func CheckTrainAvailability(service TrainService, socksAddr *string) {
 		return result.Seat
 	}))
 
-	diff := service.LastIteration.Difference(apiResponse.Result.Departing)
+	diff := service.LastIteration.Diff(apiResponse.Result.Departing)
+	if len(diff) == 0 {
+		log.Printf("no diff found")
+		return
+	}
+
+	log.Printf("diff == %#v", diff)
 	service.LastIteration.Replace(apiResponse.Result.Departing)
 
 	for _, result := range diff {
@@ -242,7 +256,13 @@ func CheckFlightAvailability(service FlightService, sockAddr *string) {
 		return result.Seat
 	}))
 
-	diff := service.LastIteration.Difference(apiResponse.Result.Departing)
+	diff := service.LastIteration.Diff(apiResponse.Result.Departing)
+	if len(diff) == 0 {
+		log.Printf("no diff found")
+		return
+	}
+
+	log.Printf("diff == %#v", diff)
 	service.LastIteration.Replace(apiResponse.Result.Departing)
 
 	for _, result := range diff {
@@ -303,6 +323,8 @@ func Fetch(url string, socksAddr *string) ([]byte, error) {
 		httpClient = &http.Client{Transport: httpTransport}
 		// set our socks5 as the dialer
 		httpTransport.Dial = dialer.Dial
+	} else {
+		httpClient = &http.Client{}
 	}
 
 	resp, err := httpClient.Get(url)
