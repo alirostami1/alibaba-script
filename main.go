@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/nikoksr/notify"
@@ -17,25 +18,27 @@ import (
 )
 
 type FlightService struct {
-	Description        string  `json:"description"`
-	URL                string  `json:"url"`
-	Seats              *int    `json:"seats"`
-	MinPriceRial       *uint64 `json:"minPriceRial"`
-	MaxPriceRial       *uint64 `json:"maxPriceRial"`
-	DepartureHourStart *uint   `json:"departureHourStart"`
-	DepartureHourEnd   *uint   `json:"departureHourEnd"`
+	Description        string                 `json:"description"`
+	URL                string                 `json:"url"`
+	Seats              *int                   `json:"seats"`
+	MinPriceRial       *uint64                `json:"minPriceRial"`
+	MaxPriceRial       *uint64                `json:"maxPriceRial"`
+	DepartureHourStart *uint                  `json:"departureHourStart"`
+	DepartureHourEnd   *uint                  `json:"departureHourEnd"`
+	LastIteration      *Iteration[FlightInfo] `json:"lastIteration"`
 }
 
 type TrainService struct {
-	Description         string  `json:"description"`
-	URL                 string  `json:"url"`
-	Seats               *int    `json:"seats"`
-	MinPriceRial        *uint64 `json:"minPriceRial"`
-	MaxPriceRial        *uint64 `json:"maxPriceRial"`
-	ShouldBeCompartment *bool   `json:"shouldBeCompartment"`
-	CompartmentCapacity *int    `json:"compartmentCapacity"`
-	DepartureHourStart  *uint   `json:"departureHourStart"`
-	DepartureHourEnd    *uint   `json:"departureHourEnd"`
+	Description         string                `json:"description"`
+	URL                 string                `json:"url"`
+	Seats               *int                  `json:"seats"`
+	MinPriceRial        *uint64               `json:"minPriceRial"`
+	MaxPriceRial        *uint64               `json:"maxPriceRial"`
+	ShouldBeCompartment *bool                 `json:"shouldBeCompartment"`
+	CompartmentCapacity *int                  `json:"compartmentCapacity"`
+	DepartureHourStart  *uint                 `json:"departureHourStart"`
+	DepartureHourEnd    *uint                 `json:"departureHourEnd"`
+	LastIteration       *Iteration[TrainInfo] `json:"lastIteration"`
 }
 
 type Config struct {
@@ -87,6 +90,31 @@ type TrainAPIResponse struct {
 	Result TrainDeparture `json:"result"`
 }
 
+type Iteration[T comparable] struct {
+	mu         sync.Mutex
+	Counter    uint64
+	Collection []T
+}
+
+func (i *Iteration[T]) Replace(newCollection []T) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.Collection = newCollection
+}
+
+func (i *Iteration[T]) Get() []T {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.Collection
+}
+
+func (i *Iteration[T]) Difference(collection []T) []T {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	_, diff := lo.Difference(i.Collection, collection)
+	return diff
+}
+
 func main() {
 	configFile, err := os.ReadFile("/etc/alibaba/config.json")
 	if err != nil {
@@ -99,6 +127,13 @@ func main() {
 		log.Fatalf("unmarshaling config file: %+v", err)
 	}
 
+	for _, service := range config.TrainServices {
+		service.LastIteration = &Iteration[TrainInfo]{}
+	}
+	for _, service := range config.FlightServices {
+		service.LastIteration = &Iteration[FlightInfo]{}
+	}
+
 	telegramService, err := telegram.New(config.TelegramAPIKey)
 	if err != nil {
 		log.Fatalf("error creating telegram service: %+v", err)
@@ -108,10 +143,10 @@ func main() {
 
 	totalServices := len(config.FlightServices) + len(config.TrainServices)
 	interval := float64(config.CheckIntervalSeconds) / float64(totalServices)
-	counter := uint64(0)
+	var iterationCounter uint64
 
 	for {
-		modulo := int(counter % uint64(totalServices))
+		modulo := int(iterationCounter % uint64(totalServices))
 		if modulo < len(config.TrainServices) {
 			log.Printf("train service: %#v", config.TrainServices[modulo])
 			go CheckTrainAvailability(config.TrainServices[modulo], config.SocksUrl)
@@ -119,7 +154,7 @@ func main() {
 			log.Printf("flight service: %#v", config.FlightServices[modulo-len(config.TrainServices)])
 			go CheckFlightAvailability(config.FlightServices[modulo-len(config.TrainServices)], config.SocksUrl)
 		}
-		counter++
+		iterationCounter++
 		time.Sleep(time.Duration(interval) * time.Second)
 	}
 }
@@ -140,7 +175,11 @@ func CheckTrainAvailability(service TrainService, socksAddr *string) {
 		return result.Seat
 	}))
 
-	for _, result := range apiResponse.Result.Departing {
+	diff := service.LastIteration.Difference(apiResponse.Result.Departing)
+	service.LastIteration.Replace(apiResponse.Result.Departing)
+
+	for _, result := range diff {
+
 		// layout 2023-07-22T00:00:00
 		resultTime, err := time.Parse("2006-01-02T15:04:05", result.DepartureDateTime)
 		if err != nil {
@@ -203,7 +242,10 @@ func CheckFlightAvailability(service FlightService, sockAddr *string) {
 		return result.Seat
 	}))
 
-	for _, result := range apiResponse.Result.Departing {
+	diff := service.LastIteration.Difference(apiResponse.Result.Departing)
+	service.LastIteration.Replace(apiResponse.Result.Departing)
+
+	for _, result := range diff {
 		// layout 2023-07-22T00:00:00
 		resultTime, err := time.Parse("2006-01-02T15:04:05", result.LeaveDateTime)
 		if err != nil {
